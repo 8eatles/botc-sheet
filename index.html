@@ -9,11 +9,21 @@ body{margin:0;background:#141218;color:#e6e0e9;font-family:system-ui,sans-serif;
 h1{font-size:1.5em;margin:.2em 0} h2{font-size:1.1em;margin:1.4em 0 .3em}
 .r{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #2b2930} .r img{width:56px;height:56px;flex:none}
 small{color:#b0b0b8}
+summary{font-size:1.1em;font-weight:bold;margin:1em 0 .4em;cursor:pointer} summary.sub{font-size:.95em;font-weight:normal;color:#b0b0b8;margin:.4em 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:.4em 0} button{font:inherit;color:#e6e0e9;background:#2b2930;border:1px solid #49454f;border-radius:16px;padding:6px 12px}
+textarea,input{font:inherit;color:#e6e0e9;background:#1d1b20;border:1px solid #49454f;border-radius:8px;padding:8px;box-sizing:border-box} textarea{width:100%}
 .scroll{overflow-x:auto} table{border-collapse:collapse;font-variant-numeric:tabular-nums} td,th{padding:4px 10px;border-bottom:1px solid #2b2930;text-align:center}
 </style>
 </head>
 <body>
 <div id="app">불러오는 중…</div>
+<details id="memo"><summary>내 메모</summary>
+<div class="chips" id="names"></div>
+<details><summary class="sub">캐릭터 이름 넣기</summary><div class="chips" id="chars"></div></details>
+<textarea id="note" rows="8" placeholder="추리한 내용을 적어 두세요. 위의 이름을 누르면 커서 자리에 들어갑니다."></textarea>
+<p><input id="add" placeholder="참가자 이름 추가" size="12"> <button id="addb">추가</button> <button id="clear">메모 지우기</button></p>
+<small>메모는 이 폰의 이 브라우저에만 저장되고 어디로도 전송되지 않습니다. 다른 브라우저로 열거나 시크릿 모드에서는 보이지 않습니다.</small>
+</details>
 <h2 id="rules">룰 요약</h2>
 <div class="r"><div><b>목표</b><br>선한 팀은 악마를 죽이면 이깁니다. 악한 팀은 살아 있는 플레이어가 2명만 남으면 이깁니다(여행자는 세지 않습니다).</div></div>
 <div class="r"><div><b>진행</b><br>게임은 밤으로 시작합니다. 밤에는 모두 눈을 감고, 이야기꾼이 정해진 순서대로 캐릭터를 깨웁니다. 낮에는 자유롭게 이야기한 뒤 지목과 투표를 합니다.</div></div>
@@ -28,7 +38,7 @@ small{color:#b0b0b8}
 <div class="r"><div><b>마도서</b><br>이야기꾼이 모든 캐릭터와 상태를 기록해 두는 판입니다.</div></div>
 <script>
 // Public copy of the grimoire app's player sheet. The link carries the script itself and nothing about any game:
-//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
+//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&p=<player names in seat order: base64url of UTF-8, one per line>][&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
 //   t / f list the Travellers / the Fabled as well; the storyteller turns them on in the app's options
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]))
 const TEAMS = [['주민', '#3B7DD8'], ['외지인', '#2FA7B8'], ['하수인', '#E0703F'], ['악마', '#C62828'], ['여행자', '#9C6BD3'], ['전설', '#D4A72C']]
@@ -39,6 +49,46 @@ const inflate = async b64 => {
   return JSON.parse(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).text())
 }
 let DB
+// ---- the player's own notes: kept in this browser only
+const $ = id => document.getElementById(id)
+const get = k => { try { return localStorage.getItem(k) || '' } catch (e) { return '' } }, put = (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} }
+const list = k => { try { return JSON.parse(get(k) || '[]') } catch (e) { return [] } }
+const utf8 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)))
+// puts a name where the cursor is, with a space after it
+function insert(text) {
+  const n = $('note'), at = n.selectionStart == null ? n.value.length : n.selectionStart
+  n.value = n.value.slice(0, at) + text + ' ' + n.value.slice(n.selectionEnd == null ? at : n.selectionEnd)
+  put('botc-memo', n.value)
+  if (n.focus) { n.focus(); n.selectionStart = n.selectionEnd = at + text.length + 1 }
+}
+const chip = (label, text) => `<button data-t="${esc(text)}">${esc(label)}</button>`
+function names() {
+  const p = new URLSearchParams(location.hash.slice(1)).get('p')
+  let seated = list('botc-seated')
+  try { if (p) seated = utf8(p).split('\n') } catch (e) {}
+  if (p) put('botc-seated', JSON.stringify(seated))   // a later visit without names in the link still has them
+  $('names').innerHTML = seated.map((n, i) => chip(`${i + 1} ${n}`.trim(), n || `${i + 1}번`)).concat(list('botc-added').filter(n => !seated.includes(n)).map(n => chip(n, n))).join('')
+    || '<small>참가자 이름이 아직 없습니다. 모두 앉은 뒤 화면의 QR을 다시 찍거나, 아래에서 직접 추가하세요.</small>'
+}
+function memo() {
+  $('note').value = get('botc-memo')
+  $('memo').open = get('botc-memo-open') != '0'
+  $('memo').addEventListener('toggle', () => put('botc-memo-open', $('memo').open ? '1' : '0'))
+  $('note').addEventListener('input', () => put('botc-memo', $('note').value))
+  for (const id of ['names', 'chars']) $(id).addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.t; if (t) insert(t) })
+  $('addb').addEventListener('click', () => {
+    const n = $('add').value.trim(), added = list('botc-added')
+    if (!n) return
+    if (!added.includes(n)) put('botc-added', JSON.stringify(added.concat(n)))
+    $('add').value = ''; names()
+  })
+  // asks by changing its own label, so nothing is lost to one stray tap
+  $('clear').addEventListener('click', () => {
+    if ($('clear').textContent != '한 번 더 누르면 지워집니다') { $('clear').textContent = '한 번 더 누르면 지워집니다'; setTimeout(() => { $('clear').textContent = '메모 지우기' }, 3000); return }
+    $('note').value = ''; put('botc-memo', ''); put('botc-added', '[]'); $('clear').textContent = '메모 지우기'; names()
+  })
+  names()
+}
 async function load() {
   const app = document.getElementById('app'), p = new URLSearchParams(location.hash.slice(1)), ids = (p.get('r') || '').split(',').filter(Boolean)
   if (!ids.length && !p.get('x')) { app.innerHTML = '<h1>시트 참조표</h1><p>게임을 준비하는 화면의 QR을 찍으면 이번 시트의 캐릭터가 여기에 표시됩니다.</p>'; return }
@@ -52,6 +102,7 @@ async function load() {
     const has = id => roles.some(r => r[0] == id), nm = id => DB.roles[id][0], ns = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     const jinxes = DB.jinxes.filter(j => ids.includes(j[0]) && ids.includes(j[1]))
     document.title = p.get('n') || '이번 시트'
+    $('chars').innerHTML = roles.filter(r => r[3] < 4).map(r => chip(r[1], r[1])).join('')
     app.innerHTML = `<h1>${esc(p.get('n') || '이번 시트')}</h1>`
       + TEAMS.map((t, i) => { const mine = roles.filter(r => r[3] == i); const rows = mine.map(r =>
         `<div class="r">${r[5] ? `<img src="icons/${r[5]}" alt="" loading="lazy">` : ''}<div><b>${esc(r[1])}</b>${r[2] && r[2] != r[1] ? ` <small>${esc(r[2])}</small>` : ''}<br>${esc(r[4])}</div></div>`).join('')
@@ -61,8 +112,9 @@ async function load() {
       + TEAMS.slice(0, 4).map((t, i) => `<tr><td style="color:${t[1]}">${t[0]}</td>${ns.map(n => `<td>${count(n)[i]}</td>`).join('')}</tr>`).join('') + `</table></div>`
   } catch (e) { app.innerHTML = '<h1>시트를 불러오지 못했습니다</h1><p>인터넷 연결을 확인하고 QR을 다시 찍어 주세요.</p>' }
 }
+memo()
 load()
-addEventListener('hashchange', load)
+addEventListener('hashchange', () => { names(); load() })
 </script>
 <p style="margin-top:2em"><img src="ccc.png" alt="Community Created Content" style="width:120px"><br><small>Blood on the Clocktower는 The Pandemonium Institute의 상표입니다. 이 페이지는 공식 페이지가 아닌 비상업적 팬 도구이며, 캐릭터 정보와 그림은 Community Created Content Policy에 따라 사용합니다.</small></p>
 </body>
