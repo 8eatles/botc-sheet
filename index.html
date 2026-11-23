@@ -9,7 +9,6 @@ body{margin:0;background:#141218;color:#e6e0e9;font-family:system-ui,sans-serif;
 h1{font-size:1.5em;margin:.2em 0} h2{font-size:1.1em;margin:1.4em 0 .3em}
 .r{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #2b2930} .r img{width:56px;height:56px;flex:none}
 small{color:#b0b0b8}
-summary{font-size:1.1em;font-weight:bold;margin:1.4em 0 .3em;cursor:pointer}
 .scroll{overflow-x:auto} table{border-collapse:collapse;font-variant-numeric:tabular-nums} td,th{padding:4px 10px;border-bottom:1px solid #2b2930;text-align:center}
 </style>
 </head>
@@ -29,7 +28,8 @@ summary{font-size:1.1em;font-weight:bold;margin:1.4em 0 .3em;cursor:pointer}
 <div class="r"><div><b>마도서</b><br>이야기꾼이 모든 캐릭터와 상태를 기록해 두는 판입니다.</div></div>
 <script>
 // Public copy of the grimoire app's player sheet. The link carries the script itself and nothing about any game:
-//   #n=<script name>&r=<character ids, comma separated>[&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
+//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
+//   t / f list the Travellers / the Fabled as well; the storyteller turns them on in the app's options
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]))
 const TEAMS = [['주민', '#3B7DD8'], ['외지인', '#2FA7B8'], ['하수인', '#E0703F'], ['악마', '#C62828'], ['여행자', '#9C6BD3'], ['전설', '#D4A72C']]
 // townsfolk, outsiders, minions, demons for 5..15 players
@@ -45,17 +45,17 @@ async function load() {
   try {
     DB = DB || await (await fetch('db.json')).json()
     const own = p.get('x') ? await inflate(p.get('x')) : []
-    // [id, name, English name, team, ability, icon]; every official Traveller and Fabled can join any game
-    const roles = ids.filter(id => DB.roles[id]).map(id => [id, ...DB.roles[id]]).concat(own.map(r => [r[0], r[1], '', r[2], r[3], '']))
-    Object.keys(DB.roles).forEach(id => { if (DB.roles[id][2] > 3 && !roles.some(r => r[0] == id)) roles.push([id, ...DB.roles[id]]) })
+    const extra = t => t == 4 ? p.get('t') : t == 5 ? p.get('f') : true
+    // [id, name, English name, team, ability, icon]
+    const roles = ids.filter(id => DB.roles[id]).map(id => [id, ...DB.roles[id]]).concat(own.filter(r => extra(r[2])).map(r => [r[0], r[1], '', r[2], r[3], '']))
+    Object.keys(DB.roles).forEach(id => { if (DB.roles[id][2] > 3 && extra(DB.roles[id][2]) && !roles.some(r => r[0] == id)) roles.push([id, ...DB.roles[id]]) })
     const has = id => roles.some(r => r[0] == id), nm = id => DB.roles[id][0], ns = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     const jinxes = DB.jinxes.filter(j => ids.includes(j[0]) && ids.includes(j[1]))
     document.title = p.get('n') || '이번 시트'
     app.innerHTML = `<h1>${esc(p.get('n') || '이번 시트')}</h1>`
       + TEAMS.map((t, i) => { const mine = roles.filter(r => r[3] == i); const rows = mine.map(r =>
         `<div class="r">${r[5] ? `<img src="icons/${r[5]}" alt="" loading="lazy">` : ''}<div><b>${esc(r[1])}</b>${r[2] && r[2] != r[1] ? ` <small>${esc(r[2])}</small>` : ''}<br>${esc(r[4])}</div></div>`).join('')
-        // Travellers and Fabled are rarely needed, so they stay folded until asked for
-        return !mine.length ? '' : i > 3 ? `<details><summary style="color:${t[1]}">${t[0]} ${mine.length}개 보기</summary>${rows}</details>` : `<h2 style="color:${t[1]}">${t[0]}</h2>` + rows }).join('')
+        return mine.length ? `<h2 style="color:${t[1]}">${t[0]}</h2>` + rows : '' }).join('')
       + (jinxes.length ? `<h2>징크스</h2>` + jinxes.map(j => `<div class="r"><div><b>${esc(nm(j[0]))} + ${esc(nm(j[1]))}</b><br>${esc(j[2])}</div></div>`).join('') : '')
       + `<h2>인원별 구성</h2><div class="scroll"><table><tr><th>인원</th>${ns.map(n => `<th>${n}</th>`).join('')}</tr>`
       + TEAMS.slice(0, 4).map((t, i) => `<tr><td style="color:${t[1]}">${t[0]}</td>${ns.map(n => `<td>${count(n)[i]}</td>`).join('')}</tr>`).join('') + `</table></div>`
