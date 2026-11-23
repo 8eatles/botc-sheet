@@ -12,6 +12,7 @@ small{color:#b0b0b8}
 summary{font-size:1.1em;font-weight:bold;margin:1em 0 .4em;cursor:pointer} summary.sub{font-size:.95em;font-weight:normal;color:#b0b0b8;margin:.4em 0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:.4em 0} button{font:inherit;color:#e6e0e9;background:#2b2930;border:1px solid #49454f;border-radius:16px;padding:6px 12px}
 textarea,input{font:inherit;color:#e6e0e9;background:#1d1b20;border:1px solid #49454f;border-radius:8px;padding:8px;box-sizing:border-box} textarea{width:100%}
+#pick{position:fixed;inset:0;background:rgba(0,0,0,.65);overflow:auto;padding:16px} #pick>div{background:#211f26;border-radius:12px;padding:12px 16px;max-width:640px;margin:auto}
 .scroll{overflow-x:auto} table{border-collapse:collapse;font-variant-numeric:tabular-nums} td,th{padding:4px 10px;border-bottom:1px solid #2b2930;text-align:center}
 </style>
 </head>
@@ -19,11 +20,12 @@ textarea,input{font:inherit;color:#e6e0e9;background:#1d1b20;border:1px solid #4
 <details id="memo"><summary>내 메모</summary>
 <div class="chips" id="names"></div>
 <details><summary class="sub">캐릭터 이름 넣기</summary><div class="chips" id="chars"></div></details>
-<textarea id="note" rows="8" placeholder="추리한 내용을 적어 두세요. 위의 이름을 누르면 커서 자리에 들어갑니다."></textarea>
+<textarea id="note" rows="8" placeholder="추리한 내용을 적어 두세요. 위의 이름을 누르면 그 사람의 캐릭터를 골라 두거나 이름을 메모에 넣을 수 있습니다."></textarea>
 <p><input id="add" placeholder="참가자 이름 추가" size="12"> <button id="addb">추가</button> <button id="clear">메모 지우기</button></p>
 <small>메모는 이 폰의 이 브라우저에만 저장되고 어디로도 전송되지 않습니다. 다른 브라우저로 열거나 시크릿 모드에서는 보이지 않습니다.</small>
 </details>
 <div id="app">불러오는 중…</div>
+<div id="pick" hidden></div>
 <h2 id="rules">룰 요약</h2>
 <div class="r"><div><b>목표</b><br>선한 팀은 악마를 죽이면 이깁니다. 악한 팀은 살아 있는 플레이어가 2명만 남으면 이깁니다(여행자는 세지 않습니다).</div></div>
 <div class="r"><div><b>진행</b><br>게임은 밤으로 시작합니다. 밤에는 모두 눈을 감고, 이야기꾼이 정해진 순서대로 캐릭터를 깨웁니다. 낮에는 자유롭게 이야기한 뒤 지목과 투표를 합니다.</div></div>
@@ -62,12 +64,30 @@ function insert(text) {
   if (n.focus) { n.focus(); n.selectionStart = n.selectionEnd = at + text.length + 1 }
 }
 const chip = (label, text) => `<button data-t="${esc(text)}">${esc(label)}</button>`
+// who the player thinks each person is: {name: [character id, character name, team]}; kept like the memo
+const guesses = () => { try { return JSON.parse(get('botc-guess') || '{}') } catch (e) { return {} } }
+let SHEET = [], picking = ''
+const person = (label, key, g) => `<button data-k="${esc(key)}"${g[key] ? ` style="border-color:${TEAMS[g[key][2]][1]}"` : ''}>${esc(label)}${g[key] ? ` · <b style="color:${TEAMS[g[key][2]][1]}">${esc(g[key][1])}</b>` : ''}</button>`
+function picker(key) {
+  picking = key
+  $('pick').innerHTML = `<div><h2 style="margin-top:.2em">${esc(key)}</h2><div class="chips"><button data-do="ins">메모에 이름 넣기</button><button data-do="none">캐릭터 지정 해제</button><button data-do="x">닫기</button></div>`
+    + TEAMS.slice(0, 4).map((t, i) => `<div class="chips">${SHEET.filter(r => r[3] == i).map(r => `<button data-id="${esc(r[0])}" style="color:${t[1]}">${esc(r[1])}</button>`).join('')}</div>`).join('') + '</div>'
+  $('pick').hidden = false
+}
+function picked(d) {
+  const g = guesses(), r = SHEET.find(r => r[0] == d.id)
+  if (d.do == 'ins') insert(picking)
+  if (d.do == 'none') delete g[picking]
+  if (r) g[picking] = [r[0], r[1], r[3]]
+  put('botc-guess', JSON.stringify(g)); $('pick').hidden = true; names()
+}
 function names() {
   const p = new URLSearchParams(location.hash.slice(1)).get('p')
   let seated = list('botc-seated')
   try { if (p) seated = utf8(p).split('\n') } catch (e) {}
   if (p) put('botc-seated', JSON.stringify(seated))   // a later visit without names in the link still has them
-  $('names').innerHTML = seated.map((n, i) => chip(`${i + 1} ${n}`.trim(), n || `${i + 1}번`)).concat(list('botc-added').filter(n => !seated.includes(n)).map(n => chip(n, n))).join('')
+  const g = guesses()
+  $('names').innerHTML = seated.map((n, i) => person(`${i + 1} ${n}`.trim(), n || `${i + 1}번`, g)).concat(list('botc-added').filter(n => !seated.includes(n)).map(n => person(n, n, g))).join('')
     || '<small>참가자 이름이 아직 없습니다. 모두 앉은 뒤 화면의 QR을 다시 찍거나, 아래에서 직접 추가하세요.</small>'
 }
 function memo() {
@@ -75,7 +95,10 @@ function memo() {
   $('memo').open = get('botc-memo-open') != '0'
   $('memo').addEventListener('toggle', () => put('botc-memo-open', $('memo').open ? '1' : '0'))
   $('note').addEventListener('input', () => put('botc-memo', $('note').value))
-  for (const id of ['names', 'chars']) $(id).addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.t; if (t) insert(t) })
+  $('chars').addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.t; if (t) insert(t) })
+  // closest(): the character shown inside a name button is its own element
+  $('names').addEventListener('click', e => { const b = e.target.closest ? e.target.closest('[data-k]') : e.target; if (b && b.dataset && b.dataset.k) picker(b.dataset.k) })
+  $('pick').addEventListener('click', e => { if (e.target.id == 'pick') $('pick').hidden = true; else if (e.target.dataset && (e.target.dataset.do || e.target.dataset.id)) picked(e.target.dataset) })
   $('addb').addEventListener('click', () => {
     const n = $('add').value.trim(), added = list('botc-added')
     if (!n) return
@@ -85,7 +108,7 @@ function memo() {
   // asks by changing its own label, so nothing is lost to one stray tap
   $('clear').addEventListener('click', () => {
     if ($('clear').textContent != '한 번 더 누르면 지워집니다') { $('clear').textContent = '한 번 더 누르면 지워집니다'; setTimeout(() => { $('clear').textContent = '메모 지우기' }, 3000); return }
-    $('note').value = ''; put('botc-memo', ''); put('botc-added', '[]'); $('clear').textContent = '메모 지우기'; names()
+    $('note').value = ''; put('botc-memo', ''); put('botc-added', '[]'); put('botc-guess', '{}'); $('clear').textContent = '메모 지우기'; names()
   })
   names()
 }
@@ -102,6 +125,7 @@ async function load() {
     const has = id => roles.some(r => r[0] == id), nm = id => DB.roles[id][0], ns = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     const jinxes = DB.jinxes.filter(j => ids.includes(j[0]) && ids.includes(j[1]))
     document.title = p.get('n') || '이번 시트'
+    SHEET = roles
     $('chars').innerHTML = roles.filter(r => r[3] < 4).map(r => chip(r[1], r[1])).join('')
     app.innerHTML = `<h1>${esc(p.get('n') || '이번 시트')}</h1>`
       + TEAMS.map((t, i) => { const mine = roles.filter(r => r[3] == i); const rows = mine.map(r =>
