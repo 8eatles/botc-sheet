@@ -40,7 +40,7 @@ textarea,input{font:inherit;color:#e6e0e9;background:#1d1b20;border:1px solid #4
 <div class="r"><div><b>마도서</b><br>이야기꾼이 모든 캐릭터와 상태를 기록해 두는 판입니다.</div></div>
 <script>
 // Public copy of the grimoire app's player sheet. The link carries the script itself and nothing about any game:
-//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&p=<player names in seat order: base64url of UTF-8, one per line>][&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
+//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&g=<game id>][&p=<player names in seat order: base64url of UTF-8, one per line>][&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
 //   t / f list the Travellers / the Fabled as well; the storyteller turns them on in the app's options
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]))
 const TEAMS = [['주민', '#3B7DD8'], ['외지인', '#2FA7B8'], ['하수인', '#E0703F'], ['악마', '#C62828'], ['여행자', '#9C6BD3'], ['전설', '#D4A72C']]
@@ -78,6 +78,13 @@ function picked(d) {
   if (r) g[picking] = [r[0], r[1], r[3]]
   put('botc-guess', JSON.stringify(g)); $('pick').hidden = true; people()
 }
+// a link from another game starts the memo over; a link without a game id (the sheet shown before anyone sits) changes nothing
+function newGame() {
+  const g = new URLSearchParams(location.hash.slice(1)).get('g')
+  if (!g || g == get('botc-game')) return
+  if (get('botc-game')) for (const k of ['botc-memo', 'botc-pmemo', 'botc-guess', 'botc-added', 'botc-seated']) put(k, '')
+  put('botc-game', g)
+}
 // one row per person: the name (tap it to pick a character) and that person's own note
 function people() {
   const p = new URLSearchParams(location.hash.slice(1)).get('p')
@@ -91,6 +98,7 @@ function people() {
   if ($('people').querySelectorAll) $('people').querySelectorAll('textarea').forEach(grow)
 }
 function memo() {
+  newGame()
   $('note').value = get('botc-memo')
   $('memo').open = get('botc-memo-open') != '0'
   $('memo').addEventListener('toggle', () => put('botc-memo-open', $('memo').open ? '1' : '0'))
@@ -142,7 +150,7 @@ async function load() {
 }
 memo()
 load()
-addEventListener('hashchange', () => { people(); load() })
+addEventListener('hashchange', () => { newGame(); $('note').value = get('botc-memo'); people(); load() })
 </script>
 <p style="margin-top:2em"><img src="ccc.png" alt="Community Created Content" style="width:120px"><br><small>Blood on the Clocktower는 The Pandemonium Institute의 상표입니다. 이 페이지는 공식 페이지가 아닌 비상업적 팬 도구이며, 캐릭터 정보와 그림은 Community Created Content Policy에 따라 사용합니다.</small></p>
 </body>
