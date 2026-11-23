@@ -70,7 +70,7 @@ let SHEET = [], picking = ''
 const person = (label, key, g) => `<button data-k="${esc(key)}"${g[key] ? ` style="border-color:${TEAMS[g[key][2]][1]}"` : ''}>${esc(label)}${g[key] ? ` · <b style="color:${TEAMS[g[key][2]][1]}">${esc(g[key][1])}</b>` : ''}</button>`
 function picker(key) {
   picking = key
-  $('pick').innerHTML = `<div><h2 style="margin-top:.2em">${esc(key)}</h2><div class="chips"><button data-do="ins">메모에 이름 넣기</button><button data-do="none">캐릭터 지정 해제</button><button data-do="x">닫기</button></div>`
+  $('pick').innerHTML = `<div><h2 style="margin-top:.2em">${esc(key)}</h2><div class="chips"><button data-do="ins">메모에 이름 넣기</button><button data-do="none">캐릭터 지정 해제</button>${list('botc-added').includes(key) ? '<button data-do="del">이 이름 삭제</button>' : ''}<button data-do="x">닫기</button></div>`
     + TEAMS.slice(0, 4).map((t, i) => `<div class="chips">${SHEET.filter(r => r[3] == i).map(r => `<button data-id="${esc(r[0])}" style="color:${t[1]}">${esc(r[1])}</button>`).join('')}</div>`).join('') + '</div>'
   $('pick').hidden = false
 }
@@ -78,6 +78,8 @@ function picked(d) {
   const g = guesses(), r = SHEET.find(r => r[0] == d.id)
   if (d.do == 'ins') insert(picking)
   if (d.do == 'none') delete g[picking]
+  // only a name the player typed in can be taken off; the seated ones come from the link
+  if (d.do == 'del') { delete g[picking]; put('botc-added', JSON.stringify(list('botc-added').filter(n => n != picking))) }
   if (r) g[picking] = [r[0], r[1], r[3]]
   put('botc-guess', JSON.stringify(g)); $('pick').hidden = true; names()
 }
