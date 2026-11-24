@@ -40,7 +40,7 @@ textarea,input{font:inherit;color:#e6e0e9;background:#1d1b20;border:1px solid #4
 <div class="r"><div><b>마도서</b><br>이야기꾼이 모든 캐릭터와 상태를 기록해 두는 판입니다.</div></div>
 <script>
 // Public copy of the grimoire app's player sheet. The link carries the script itself and nothing about any game:
-//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&g=<game id>][&p=<player names in seat order: base64url of UTF-8, one per line>][&x=<homebrew characters: base64url of deflated JSON [[id, name, team, ability], ...]>]
+//   #n=<script name>&r=<character ids, comma separated>[&t=1][&f=1][&g=<game id>][&p=<player names in seat order: base64url of UTF-8, one per line>][&x=<homebrew characters the page does not have: base64url of JSON [[id, name, team, ability], ...], deflated or not>]
 //   t / f list the Travellers / the Fabled as well; the storyteller turns them on in the app's options
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]))
 const TEAMS = [['주민', '#3B7DD8'], ['외지인', '#2FA7B8'], ['하수인', '#E0703F'], ['악마', '#C62828'], ['여행자', '#9C6BD3'], ['전설', '#D4A72C']]
@@ -132,7 +132,8 @@ async function load() {
     DB = DB || await (await fetch('db.json')).json()
     // a damaged link (cut short, or mangled when pasted) or an old browser loses only the homebrew characters, not the sheet
     let own = [], lost = false
-    try { if (p.get('x')) own = await inflate(p.get('x')) } catch (e) { lost = true }
+    if (p.get('x')) try { own = JSON.parse(utf8(p.get('x'))) } catch (e) { try { own = await inflate(p.get('x')) } catch (e) { lost = true } }
+    own = own.filter(r => !DB.roles[r[0]])   // a link may still carry characters this page has since been given
     const extra = t => t == 4 ? p.get('t') : t == 5 ? p.get('f') : true
     // [id, name, English name, team, ability, icon]
     const roles = ids.filter(id => DB.roles[id]).map(id => [id, ...DB.roles[id]]).concat(own.filter(r => extra(r[2])).map(r => [r[0], r[1], '', r[2], r[3], '']))
