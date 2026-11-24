@@ -130,7 +130,9 @@ async function load() {
   if (!ids.length && !p.get('x')) { app.innerHTML = '<h1>시트 참조표</h1><p>게임을 준비하는 화면의 QR을 찍으면 이번 시트의 캐릭터가 여기에 표시됩니다.</p>'; return }
   try {
     DB = DB || await (await fetch('db.json')).json()
-    const own = p.get('x') ? await inflate(p.get('x')) : []
+    // a damaged link (cut short, or mangled when pasted) or an old browser loses only the homebrew characters, not the sheet
+    let own = [], lost = false
+    try { if (p.get('x')) own = await inflate(p.get('x')) } catch (e) { lost = true }
     const extra = t => t == 4 ? p.get('t') : t == 5 ? p.get('f') : true
     // [id, name, English name, team, ability, icon]
     const roles = ids.filter(id => DB.roles[id]).map(id => [id, ...DB.roles[id]]).concat(own.filter(r => extra(r[2])).map(r => [r[0], r[1], '', r[2], r[3], '']))
@@ -140,6 +142,7 @@ async function load() {
     document.title = p.get('n') || '이번 시트'
     SHEET = roles
     app.innerHTML = `<h1>${esc(p.get('n') || '이번 시트')}</h1>`
+      + (lost ? '<p style="color:#f2b8b5">이 시트의 자작 캐릭터를 읽지 못해 공식 캐릭터만 표시합니다. 주소가 잘렸을 수 있으니 QR을 다시 찍어 주세요.</p>' : '')
       + TEAMS.map((t, i) => { const mine = roles.filter(r => r[3] == i); const rows = mine.map(r =>
         `<div class="r">${r[5] ? `<img src="icons/${r[5]}" alt="" loading="lazy">` : ''}<div><b>${esc(r[1])}</b>${r[2] && r[2] != r[1] ? ` <small>${esc(r[2])}</small>` : ''}<br>${esc(r[4])}</div></div>`).join('')
         return mine.length ? `<h2 style="color:${t[1]}">${t[0]}</h2>` + rows : '' }).join('')
